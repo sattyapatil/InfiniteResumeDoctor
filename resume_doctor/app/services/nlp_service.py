@@ -1,116 +1,93 @@
-import textstat
-import re
-from collections import Counter
+"""
+Resume Text Extraction and Vitals Check Service
+
+Lightweight service using:
+- pdfminer.six for PDF text extraction (best accuracy for complex layouts)
+- Gemini Flash-Lite for quick resume scoring (minimal tokens)
+
+No heavy local NLP dependencies (textstat, nltk removed for Railway optimization).
+"""
+
 import io
+import json
+import google.generativeai as genai
 from pdfminer.high_level import extract_text
-import nltk
-import ssl
+from app.core.config import settings
 
-# Ensure NLTK data is downloaded (needed for textstat)
-# Fix for macOS SSL certificate error
-try:
-    _create_unverified_https_context = ssl._create_unverified_context
-except AttributeError:
-    pass
-else:
-    ssl._create_default_https_context = _create_unverified_https_context
+# Configure Gemini
+genai.configure(api_key=settings.GEMINI_API_KEY)
 
-try:
-    nltk.data.find('corpora/cmudict.zip')
-except LookupError:
-    nltk.download('cmudict')
-
-# Strong action verbs for resume analysis
-STRONG_VERBS = {
-    "spearheaded", "architected", "orchestrated", "increased", "reduced", "generated",
-    "developed", "managed", "led", "created", "designed", "implemented", "improved",
-    "optimized", "delivered", "achieved", "launched", "initiated", "coordinated",
-    "established", "executed", "resolved", "negotiated", "mentored", "supervised",
-    "collaborated", "partnered", "facilitated", "streamlined", "maximized", "minimized",
-    "accelerated", "boosted", "enhanced", "expanded", "generated", "pioneered",
-    "transformed", "revitalized", "modernized", "automated", "integrated"
-}
-
-def analyze_text_metrics(text: str):
-    """
-    Analyze resume text using lightweight local methods.
-    This is the "Vitals Check" - fast, free, and deterministic.
-    For deep analysis (skills extraction, ATS optimization), use Gemini API.
-    """
-    
-    # 1. Readability Score (aim for 60-80)
-    readability = textstat.flesch_reading_ease(text)
-    
-    # 2. Action Verb Analysis using regex
-    # Match word boundaries to find complete words
-    words = re.findall(r'\b\w+\b', text.lower())
-    
-    # Count strong verbs
-    strong_verb_count = sum(1 for word in words if word in STRONG_VERBS)
-    
-    # Estimate total verbs using common verb patterns
-    # This is a lightweight heuristic - for precise analysis, use Gemini
-    verb_pattern = r'\b(ed|ing|ize|ise|ate|ify)\b'
-    estimated_verbs = len(re.findall(verb_pattern, text.lower()))
-    # Add strong verbs that might not match the pattern
-    estimated_verbs = max(estimated_verbs, strong_verb_count)
-    
-    # 3. Quantifiable Impact (Numbers)
-    # Looking for patterns like $10k, 20%, 5x
-    numeric_pattern = r'(\$\d+(?:,\d{3})*(?:\.\d+)?(?:k|m|b)?)|(\d+(?:\.\d+)?%)|(\d+x)'
-    numeric_entities = re.findall(numeric_pattern, text, re.IGNORECASE)
-    
-    # 4. Word count
-    word_count = len(words)
-    
-    # 5. Contact information detection (basic regex)
-    email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
-    phone_pattern = r'\b(?:\+\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b'
-    
-    has_email = bool(re.search(email_pattern, text))
-    has_phone = bool(re.search(phone_pattern, text))
-    
-    return {
-        "readability": readability,
-        "strong_verb_count": strong_verb_count,
-        "strong_verb_ratio": strong_verb_count / estimated_verbs if estimated_verbs > 0 else 0,
-        "quantifiable_metrics": len(numeric_entities),
-        "word_count": word_count,
-        "has_contact_info": has_email and has_phone
-    }
 
 def extract_text_from_pdf(file_content: bytes) -> str:
     """
-    Extracts text from a PDF file using pdfminer.six.
-    This library handles multi-column resume layouts better than pypdf.
+    Extract text from a PDF file using pdfminer.six.
+    Handles multi-column resume layouts better than pypdf.
+    
+    Args:
+        file_content: Raw PDF bytes
+        
+    Returns:
+        Extracted text string
     """
     try:
-        # pdfminer.six handles complex layouts better
         text = extract_text(io.BytesIO(file_content))
-        return text
+        return text.strip()
     except Exception as e:
         print(f"Error extracting text from PDF: {e}")
         return ""
 
+
+# Lightweight Gemini prompt for Vitals Check (~500 tokens)
+VITALS_PROMPT = """You are a resume scoring expert. Analyze this resume and provide scores.
+
+SCORING CRITERIA (0-100 each):
+1. IMPACT (30% weight): Quantifiable achievements using %, $, numbers, metrics
+2. BREVITY (20%): Concise bullet points (<2 lines), no long paragraphs
+3. STYLE (20%): Active voice, strong action verbs (Led, Built, Drove, not "Responsible for")
+4. COMPLETENESS (15%): Has contact info, summary/objective, experience, education, skills
+5. ATS (15%): Standard section headers, keyword-rich, no graphics/tables mentioned
+
+Calculate overall_score using the weighted formula.
+
+RETURN VALID JSON ONLY (no markdown, no explanation):
+{
+  "overall_score": 75,
+  "impact_score": 70,
+  "brevity_score": 80,
+  "style_score": 75,
+  "summary_feedback": "Strong technical skills. Needs more quantifiable achievements in experience section.",
+  "experience_level": "mid",
+  "industry": "technology"
+}
+
+RULES:
+- overall_score = (impact*0.30 + brevity*0.20 + style*0.20 + completeness*0.15 + ats*0.15)
+- experience_level: "entry" (<2 years), "mid" (2-7 years), "senior" (7+ years)
+- industry: technology, finance, healthcare, marketing, education, legal, engineering, other
+- summary_feedback: 1-2 sentences max, actionable
+
+RESUME TEXT:
+{resume_text}
+"""
+
+
 def vitals_check(pdf_content: bytes) -> dict:
     """
-    Main entry point for the Vitals Check (Free Tier).
-    Extracts text from PDF and performs lightweight local analysis.
-    
-    This is fast, free, and deterministic - no API calls required.
-    For deep analysis, use the Deep Scan endpoint with Gemini.
+    Main entry point for Vitals Check (Free Tier).
+    Uses Gemini Flash-Lite for fast, accurate scoring.
     
     Args:
         pdf_content: Raw PDF file bytes
         
     Returns:
-        Dictionary containing vitals metrics:
-        - readability: Flesch reading ease score
-        - strong_verb_count: Number of strong action verbs found
-        - strong_verb_ratio: Ratio of strong verbs to total verbs
-        - quantifiable_metrics: Count of numbers/percentages/multipliers
-        - word_count: Total word count
-        - has_contact_info: Boolean if email and phone found
+        Dictionary with scores and summary:
+        - overall_score (0-100)
+        - impact_score (0-100)
+        - brevity_score (0-100)
+        - style_score (0-100)
+        - summary_feedback (string)
+        - experience_level (entry/mid/senior)
+        - industry (string)
     """
     # Extract text from PDF
     text = extract_text_from_pdf(pdf_content)
@@ -118,16 +95,60 @@ def vitals_check(pdf_content: bytes) -> dict:
     if not text or len(text.strip()) < 50:
         return {
             "error": "Could not extract sufficient text from PDF",
-            "readability": 0,
-            "strong_verb_count": 0,
-            "strong_verb_ratio": 0,
-            "quantifiable_metrics": 0,
-            "word_count": 0,
-            "has_contact_info": False
+            "overall_score": 0,
+            "impact_score": 0,
+            "brevity_score": 0,
+            "style_score": 0,
+            "summary_feedback": "Unable to read resume content. Please ensure the PDF is not image-based or encrypted.",
+            "experience_level": "unknown",
+            "industry": "unknown"
         }
     
-    # Analyze the extracted text
-    metrics = analyze_text_metrics(text)
-    
-    return metrics
+    try:
+        # Use lightweight Gemini model for quick scoring
+        model = genai.GenerativeModel(
+            'gemini-2.0-flash-lite',
+            generation_config={"response_mime_type": "application/json"}
+        )
+        
+        # Truncate text if too long (save tokens)
+        max_chars = 8000  # ~2000 tokens
+        truncated_text = text[:max_chars] if len(text) > max_chars else text
+        
+        prompt = VITALS_PROMPT.format(resume_text=truncated_text)
+        
+        response = model.generate_content(prompt)
+        result = json.loads(response.text)
+        
+        # Ensure all required fields exist with defaults
+        return {
+            "overall_score": result.get("overall_score", 50),
+            "impact_score": result.get("impact_score", 50),
+            "brevity_score": result.get("brevity_score", 50),
+            "style_score": result.get("style_score", 50),
+            "summary_feedback": result.get("summary_feedback", "Analysis complete."),
+            "experience_level": result.get("experience_level", "mid"),
+            "industry": result.get("industry", "other"),
+            # Placeholder fields for UI compatibility
+            "sections": [],
+            "missing_keywords": [],
+            "parsed_data": {}
+        }
+        
+    except Exception as e:
+        print(f"Gemini analysis error: {e}")
+        return {
+            "error": f"Analysis failed: {str(e)}",
+            "overall_score": 0,
+            "impact_score": 0,
+            "brevity_score": 0,
+            "style_score": 0,
+            "summary_feedback": "Analysis service encountered an error. Please try again.",
+            "experience_level": "unknown",
+            "industry": "unknown",
+            "sections": [],
+            "missing_keywords": [],
+            "parsed_data": {}
+        }
+
 
