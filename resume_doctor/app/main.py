@@ -24,7 +24,7 @@ from app.core.rate_limits import (
     rate_limit_exceeded_handler,
     get_tier_from_request
 )
-from app.api.v1.endpoints import health_check, analyze
+from app.api.v1.endpoints import analyze
 
 # Configure structured logging
 logging.basicConfig(
@@ -122,7 +122,6 @@ async def log_requests(request: Request, call_next):
 
 
 # Include routers
-app.include_router(health_check.router, prefix=f"{settings.API_V1_STR}", tags=["health_check"])
 app.include_router(analyze.router, prefix=f"{settings.API_V1_STR}/analyze", tags=["analyze"])
 
 
