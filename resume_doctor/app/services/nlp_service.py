@@ -85,6 +85,7 @@ def clean_json_response(response_text: str) -> str:
 
 
 # Lightweight Gemini prompt for Vitals Check (~500 tokens)
+# NOTE: {{ and }} are escaped curly braces for Python .format()
 VITALS_PROMPT = """You are a resume scoring expert. Analyze this resume and provide scores.
 
 SCORING CRITERIA (0-100 each):
@@ -98,7 +99,7 @@ Calculate overall_score using the weighted formula.
 
 IMPORTANT: Return ONLY valid JSON, no markdown, no code blocks, no explanation.
 
-{"overall_score": 75, "impact_score": 70, "brevity_score": 80, "style_score": 75, "summary_feedback": "Strong technical skills. Needs more quantifiable achievements.", "experience_level": "mid", "industry": "technology"}
+{{"overall_score": 75, "impact_score": 70, "brevity_score": 80, "style_score": 75, "summary_feedback": "Strong technical skills. Needs more quantifiable achievements.", "experience_level": "mid", "industry": "technology"}}
 
 RULES:
 - overall_score = (impact*0.30 + brevity*0.20 + style*0.20 + completeness*0.15 + ats*0.15)
@@ -132,7 +133,12 @@ def vitals_check(pdf_content: bytes) -> dict:
     # Extract text from PDF
     text = extract_text_from_pdf(pdf_content)
     
-    if not text or len(text.strip()) < 50:
+    # Debug: Show extracted text
+    print(f"[DEBUG] Extracted text (first 300 chars): {repr(text[:300] if text else 'NONE')}")
+    
+    # Need at least 200 chars for meaningful analysis
+    if not text or len(text.strip()) < 200:
+        print(f"[DEBUG] Text too short: {len(text.strip()) if text else 0} chars. Minimum: 200")
         return {
             "error": "Could not extract sufficient text from PDF",
             "overall_score": 0,
@@ -141,7 +147,10 @@ def vitals_check(pdf_content: bytes) -> dict:
             "style_score": 0,
             "summary_feedback": "Unable to read resume content. Please ensure the PDF is not image-based or encrypted.",
             "experience_level": "unknown",
-            "industry": "unknown"
+            "industry": "unknown",
+            "sections": [],
+            "missing_keywords": [],
+            "parsed_data": {}
         }
     
     try:
@@ -155,13 +164,32 @@ def vitals_check(pdf_content: bytes) -> dict:
         max_chars = 8000  # ~2000 tokens
         truncated_text = text[:max_chars] if len(text) > max_chars else text
         
+        print(f"[DEBUG] Resume text length: {len(text)}, truncated: {len(truncated_text)}", flush=True)
+        
         prompt = VITALS_PROMPT.format(resume_text=truncated_text)
         
+        print("[DEBUG] Calling Gemini API...", flush=True)
         response = model.generate_content(prompt)
+        print("[DEBUG] Gemini API call complete", flush=True)
+        
+        # Debug: Print raw response
+        print(f"[DEBUG] Raw Gemini response type: {type(response.text)}", flush=True)
+        print(f"[DEBUG] Raw Gemini response (first 500 chars):\n{repr(response.text[:500])}", flush=True)
         
         # Clean the response to handle markdown/extra text
         cleaned_response = clean_json_response(response.text)
-        result = json.loads(cleaned_response)
+        print(f"[DEBUG] Cleaned response (first 500 chars):\n{repr(cleaned_response[:500])}", flush=True)
+        
+        # Try to parse JSON
+        try:
+            result = json.loads(cleaned_response)
+            print(f"[DEBUG] JSON parsed successfully. Keys: {list(result.keys())}", flush=True)
+        except json.JSONDecodeError as json_err:
+            print(f"[DEBUG] JSON parse error: {json_err}", flush=True)
+            print(f"[DEBUG] Error position: {json_err.pos}", flush=True)
+            print(f"[DEBUG] Error line: {json_err.lineno}, col: {json_err.colno}", flush=True)
+            print(f"[DEBUG] Problematic content around error: {repr(cleaned_response[max(0,json_err.pos-50):json_err.pos+50])}", flush=True)
+            raise
         
         # Ensure all required fields exist with defaults
         return {
@@ -179,7 +207,9 @@ def vitals_check(pdf_content: bytes) -> dict:
         }
         
     except Exception as e:
-        print(f"Gemini analysis error: {e}")
+        import traceback
+        print(f"Gemini analysis error: {e}", flush=True)
+        print(f"[DEBUG] Full traceback:\n{traceback.format_exc()}", flush=True)
         return {
             "error": f"Analysis failed: {str(e)}",
             "overall_score": 0,
