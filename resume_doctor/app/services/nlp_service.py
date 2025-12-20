@@ -42,10 +42,16 @@ def clean_json_response(response_text: str) -> str:
     Clean Gemini response to extract valid JSON.
     Handles common issues:
     - Markdown code blocks (```json ... ```)
-    - Leading/trailing whitespace
+    - Leading/trailing whitespace and newlines
     - Extra text before/after JSON
+    - Control characters
     """
+    import re
+    
     text = response_text.strip()
+    
+    # Log raw response for debugging (first 200 chars)
+    print(f"[clean_json] Raw response (first 200 chars): {repr(text[:200])}")
     
     # Remove markdown code blocks
     if text.startswith("```json"):
@@ -58,12 +64,22 @@ def clean_json_response(response_text: str) -> str:
     
     text = text.strip()
     
-    # Find JSON object boundaries
-    start_idx = text.find('{')
-    end_idx = text.rfind('}')
+    # Try to find JSON object using regex (more robust)
+    json_match = re.search(r'\{[\s\S]*\}', text)
+    if json_match:
+        text = json_match.group(0)
+    else:
+        # Fallback: find boundaries manually
+        start_idx = text.find('{')
+        end_idx = text.rfind('}')
+        
+        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+            text = text[start_idx:end_idx + 1]
     
-    if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-        text = text[start_idx:end_idx + 1]
+    # Remove control characters that could break JSON parsing
+    text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', text)
+    
+    print(f"[clean_json] Cleaned response (first 200 chars): {repr(text[:200])}")
     
     return text
 
