@@ -37,6 +37,37 @@ def extract_text_from_pdf(file_content: bytes) -> str:
         return ""
 
 
+def clean_json_response(response_text: str) -> str:
+    """
+    Clean Gemini response to extract valid JSON.
+    Handles common issues:
+    - Markdown code blocks (```json ... ```)
+    - Leading/trailing whitespace
+    - Extra text before/after JSON
+    """
+    text = response_text.strip()
+    
+    # Remove markdown code blocks
+    if text.startswith("```json"):
+        text = text[7:]
+    elif text.startswith("```"):
+        text = text[3:]
+    
+    if text.endswith("```"):
+        text = text[:-3]
+    
+    text = text.strip()
+    
+    # Find JSON object boundaries
+    start_idx = text.find('{')
+    end_idx = text.rfind('}')
+    
+    if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+        text = text[start_idx:end_idx + 1]
+    
+    return text
+
+
 # Lightweight Gemini prompt for Vitals Check (~500 tokens)
 VITALS_PROMPT = """You are a resume scoring expert. Analyze this resume and provide scores.
 
@@ -49,16 +80,9 @@ SCORING CRITERIA (0-100 each):
 
 Calculate overall_score using the weighted formula.
 
-RETURN VALID JSON ONLY (no markdown, no explanation):
-{
-  "overall_score": 75,
-  "impact_score": 70,
-  "brevity_score": 80,
-  "style_score": 75,
-  "summary_feedback": "Strong technical skills. Needs more quantifiable achievements in experience section.",
-  "experience_level": "mid",
-  "industry": "technology"
-}
+IMPORTANT: Return ONLY valid JSON, no markdown, no code blocks, no explanation.
+
+{"overall_score": 75, "impact_score": 70, "brevity_score": 80, "style_score": 75, "summary_feedback": "Strong technical skills. Needs more quantifiable achievements.", "experience_level": "mid", "industry": "technology"}
 
 RULES:
 - overall_score = (impact*0.30 + brevity*0.20 + style*0.20 + completeness*0.15 + ats*0.15)
@@ -118,7 +142,10 @@ def vitals_check(pdf_content: bytes) -> dict:
         prompt = VITALS_PROMPT.format(resume_text=truncated_text)
         
         response = model.generate_content(prompt)
-        result = json.loads(response.text)
+        
+        # Clean the response to handle markdown/extra text
+        cleaned_response = clean_json_response(response.text)
+        result = json.loads(cleaned_response)
         
         # Ensure all required fields exist with defaults
         return {

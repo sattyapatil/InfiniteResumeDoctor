@@ -96,28 +96,64 @@ DEEP_SCAN_INFINITE_LIMIT = "50/day"
 def rate_limit_exceeded_handler(request: Request, exc: Exception):
     """
     Custom handler for rate limit exceeded errors.
-    Returns a user-friendly response with Retry-After header.
+    Returns user-friendly response with:
+    - Clear message about what happened
+    - Remaining quota info if available
+    - Upgrade suggestion for free tiers
+    - Retry-After header
     """
     from fastapi.responses import JSONResponse
     
-    # Calculate retry time (simplified - 1 hour for safety)
-    retry_after = 3600
-    
     tier = get_tier_from_request(request)
+    path = request.url.path
+    
+    # Determine which endpoint was rate limited
+    endpoint = "deep_scan" if "deep-scan" in path else "vitals"
+    
+    # Get tier limits for context
+    tier_limits = TIER_RATE_LIMITS.get(tier, TIER_RATE_LIMITS["guest"])
+    limit_str = tier_limits.get(endpoint, "0/day")
+    
+    # Parse limit (e.g., "10/day" -> 10)
+    try:
+        daily_limit = int(limit_str.split("/")[0]) if limit_str else 0
+    except:
+        daily_limit = 0
+    
+    # Different messages based on tier
+    if tier == "guest":
+        message = "You've used your 3 free resume scans for today."
+        action = "Create a free account to get 10 scans per day, or upgrade to Pro for unlimited access."
+    elif tier == "infinite-free":
+        message = f"You've used all {daily_limit} of your daily resume scans."
+        action = "Upgrade to Pro for more scans and access to Deep Scan AI analysis."
+    elif tier == "infinite-pro":
+        message = f"You've reached your Pro limit of {daily_limit} {endpoint.replace('_', ' ')} scans today."
+        action = "Upgrade to Truly Infinite for higher limits, or try again tomorrow."
+    else:
+        message = "You've reached your daily scan limit."
+        action = "Please try again tomorrow."
+    
+    # Longer retry for daily limits vs. burst limits
+    retry_after = 86400  # 24 hours for daily quota
     
     response_data = {
-        "error": "Rate limit exceeded",
-        "detail": "You have exceeded the maximum number of requests. Please try again later.",
-        "tier": tier,
-        "retry_after_seconds": retry_after,
+        "error": "Daily Limit Reached",
+        "message": message,
+        "code": "DAILY_QUOTA_EXCEEDED",
+        "action": action,
+        "current_tier": tier,
+        "daily_limit": daily_limit,
+        "retry_after": retry_after,
     }
     
-    # Add upgrade suggestion for non-premium tiers
-    if tier in ["guest", "infinite-free"]:
-        response_data["upgrade_hint"] = "Upgrade to Pro for higher limits"
+    # Add upgrade URL for non-premium tiers
+    if tier in ["guest", "infinite-free", "infinite-pro"]:
+        response_data["upgrade_url"] = "/pricing"
     
     return JSONResponse(
         status_code=429,
         content=response_data,
         headers={"Retry-After": str(retry_after)}
     )
+

@@ -14,6 +14,32 @@ from app.core.config import settings
 genai.configure(api_key=settings.GEMINI_API_KEY)
 
 
+def clean_json_response(response_text: str) -> str:
+    """
+    Clean Gemini response to extract valid JSON.
+    Handles markdown code blocks and extra whitespace.
+    """
+    text = response_text.strip()
+    
+    if text.startswith("```json"):
+        text = text[7:]
+    elif text.startswith("```"):
+        text = text[3:]
+    
+    if text.endswith("```"):
+        text = text[:-3]
+    
+    text = text.strip()
+    
+    start_idx = text.find('{')
+    end_idx = text.rfind('}')
+    
+    if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+        text = text[start_idx:end_idx + 1]
+    
+    return text
+
+
 # Comprehensive Deep Scan prompt with industry-standard scoring
 DEEP_SCAN_PROMPT = """You are an expert ATS Resume Auditor with 10+ years of recruitment experience.
 Analyze this resume thoroughly and provide detailed, actionable improvements.
@@ -197,8 +223,9 @@ def analyze_with_gemini(pdf_content: bytes, job_description: Optional[str] = Non
             prompt
         ])
         
-        # Validate JSON response
-        result = json.loads(response.text)
+        # Clean and validate JSON response
+        cleaned_response = clean_json_response(response.text)
+        result = json.loads(cleaned_response)
         
         # Ensure required fields exist with defaults
         return json.dumps({
