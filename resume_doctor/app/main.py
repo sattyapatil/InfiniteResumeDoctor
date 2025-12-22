@@ -62,24 +62,37 @@ app.add_middleware(
 async def validate_origin(request: Request, call_next):
     """
     Validate request origin in production.
-    This is an additional security layer beyond CORS.
+    Strictly blocks requests without proper Origin or API Key.
     """
     # Skip validation for health checks and preflight
-    if request.url.path in ["/", "/health"] or request.method == "OPTIONS":
+    if request.url.path in ["/health", "/"] or request.method == "OPTIONS":
         return await call_next(request)
     
     # In production, strictly validate origin
     if settings.IS_PRODUCTION:
         origin = request.headers.get("origin") or request.headers.get("referer", "")
+        api_key = request.headers.get("x-api-key")
         
-        # Check if origin is in allowed list
+        # 1. Check for API Key bypass (Server-to-Server)
+        if api_key and api_key == settings.API_SECRET_KEY:
+            return await call_next(request)
+            
+        # 2. If no API Key, MUST have valid Origin
+        if not origin:
+            logger.warning(f"Blocked headless request to {request.url.path} from {request.client.host if request.client else 'unknown'}")
+            return JSONResponse(
+                status_code=403,
+                content={"error": "Access denied: Missing Origin header"}
+            )
+            
+        # 3. Check if origin is allowed
         origin_valid = False
         for allowed in settings.allowed_origins_list:
             if origin.startswith(allowed):
                 origin_valid = True
                 break
         
-        if not origin_valid and origin:  # Only block if origin header is present
+        if not origin_valid:
             logger.warning(json.dumps({
                 "event": "origin_blocked",
                 "origin": origin,
