@@ -82,6 +82,9 @@ def create_dynamic_limiter() -> Limiter:
     """Create a limiter with dynamic key function"""
     return Limiter(key_func=get_rate_limit_key)
 
+# Global limiter instance
+limiter = create_dynamic_limiter()
+
 
 # Pre-configured rate limit strings for decorator use
 VITALS_GUEST_LIMIT = "3/day"

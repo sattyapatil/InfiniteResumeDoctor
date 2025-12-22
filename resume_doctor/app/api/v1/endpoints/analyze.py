@@ -20,13 +20,12 @@ from app.core.rate_limits import (
     get_tier_from_request,
     VITALS_GUEST_LIMIT,
     VITALS_FREE_LIMIT,
+    DEEP_SCAN_PRO_LIMIT,
+    DEEP_SCAN_INFINITE_LIMIT,
+    limiter
 )
 
 router = APIRouter()
-
-# Get limiter from app state (will be set by main.py)
-def get_limiter(request: Request) -> Limiter:
-    return request.app.state.limiter
 
 
 def validate_pdf_file(file: UploadFile) -> None:
@@ -90,6 +89,7 @@ async def read_and_validate_pdf(file: UploadFile) -> bytes:
 
 
 @router.post("/vitals")
+@limiter.limit(VITALS_GUEST_LIMIT)  # Default lower limit, overridden by tier logic in limiter if needed
 async def vitals_check_endpoint(
     request: Request,
     file: UploadFile = File(...),
@@ -143,6 +143,7 @@ async def vitals_check_endpoint(
 
 
 @router.post("/deep-scan")
+@limiter.limit(DEEP_SCAN_PRO_LIMIT)
 async def deep_scan_endpoint(
     request: Request,
     file: UploadFile = File(...),

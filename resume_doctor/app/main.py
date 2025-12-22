@@ -22,7 +22,8 @@ from app.core.config import settings
 from app.core.rate_limits import (
     get_rate_limit_key, 
     rate_limit_exceeded_handler,
-    get_tier_from_request
+    get_tier_from_request,
+    limiter
 )
 from app.api.v1.endpoints import analyze
 
@@ -32,9 +33,6 @@ logging.basicConfig(
     format='%(message)s'
 )
 logger = logging.getLogger(__name__)
-
-# Initialize rate limiter with tier-aware key function
-limiter = Limiter(key_func=get_rate_limit_key)
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
