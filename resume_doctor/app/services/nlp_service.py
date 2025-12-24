@@ -84,9 +84,8 @@ def clean_json_response(response_text: str) -> str:
     return text
 
 
-# Lightweight Gemini prompt for Vitals Check (~500 tokens)
-# NOTE: {{ and }} are escaped curly braces for Python .format()
-VITALS_PROMPT = """You are a resume scoring expert. Analyze this resume and provide scores.
+# Gemini prompt for Vitals Check with sections and issues
+VITALS_PROMPT = """You are a resume scoring expert. Analyze this resume and provide detailed feedback.
 
 SCORING CRITERIA (0-100 each):
 1. IMPACT (30% weight): Quantifiable achievements using %, $, numbers, metrics
@@ -97,15 +96,17 @@ SCORING CRITERIA (0-100 each):
 
 Calculate overall_score using the weighted formula.
 
-IMPORTANT: Return ONLY valid JSON, no markdown, no code blocks, no explanation.
+IMPORTANT: Return ONLY valid JSON matching this exact structure:
 
-{{"overall_score": 75, "impact_score": 70, "brevity_score": 80, "style_score": 75, "summary_feedback": "Strong technical skills. Needs more quantifiable achievements.", "experience_level": "mid", "industry": "technology"}}
+{{"overall_score": 75, "impact_score": 70, "brevity_score": 80, "style_score": 75, "summary_feedback": "Strong technical skills. Needs more quantifiable achievements.", "experience_level": "mid", "industry": "technology", "sections": [{{"section_name": "Experience", "score": 70, "issues": ["Lacks quantifiable results", "Uses passive voice"], "actionable_fixes": ["Add metrics like revenue or efficiency %", "Start bullets with action verbs"]}}, {{"section_name": "Skills", "score": 85, "issues": ["Missing soft skills"], "actionable_fixes": ["Add leadership or communication skills"]}}], "missing_keywords": ["Python", "AWS", "Agile"]}}
 
 RULES:
 - overall_score = (impact*0.30 + brevity*0.20 + style*0.20 + completeness*0.15 + ats*0.15)
 - experience_level: "entry" (<2 years), "mid" (2-7 years), "senior" (7+ years)
 - industry: technology, finance, healthcare, marketing, education, legal, engineering, other
 - summary_feedback: 1-2 sentences max, actionable
+- sections: Analyze Experience, Education, Skills, Summary (2-4 sections max). Each needs score, issues array, actionable_fixes array.
+- missing_keywords: 3-5 industry keywords the resume should include for ATS
 
 RESUME TEXT:
 {resume_text}
@@ -200,9 +201,9 @@ def vitals_check(pdf_content: bytes) -> dict:
             "summary_feedback": result.get("summary_feedback", "Analysis complete."),
             "experience_level": result.get("experience_level", "mid"),
             "industry": result.get("industry", "other"),
-            # Placeholder fields for UI compatibility
-            "sections": [],
-            "missing_keywords": [],
+            # Section-level feedback with issues
+            "sections": result.get("sections", []),
+            "missing_keywords": result.get("missing_keywords", []),
             "parsed_data": {}
         }
         
