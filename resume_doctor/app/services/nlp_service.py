@@ -151,7 +151,8 @@ def vitals_check(pdf_content: bytes) -> dict:
             "industry": "unknown",
             "sections": [],
             "missing_keywords": [],
-            "parsed_data": {}
+            "parsed_data": {},
+            "extracted_text": text.strip() if text else ""
         }
     
     try:
@@ -204,7 +205,8 @@ def vitals_check(pdf_content: bytes) -> dict:
             # Section-level feedback with issues
             "sections": result.get("sections", []),
             "missing_keywords": result.get("missing_keywords", []),
-            "parsed_data": {}
+            "parsed_data": {},
+            "extracted_text": text.strip()
         }
         
     except Exception as e:
@@ -222,7 +224,8 @@ def vitals_check(pdf_content: bytes) -> dict:
             "industry": "unknown",
             "sections": [],
             "missing_keywords": [],
-            "parsed_data": {}
+            "parsed_data": {},
+            "extracted_text": text.strip() if text else ""
         }
 
 
