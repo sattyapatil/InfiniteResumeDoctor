@@ -1,43 +1,16 @@
 """
 Gemini AI Service for Resume Deep Scan
 
-Provides comprehensive AI-powered resume analysis using Gemini 2.0 Flash-Lite.
-Includes industry-standard ATS scoring, section-by-section feedback, and actionable fixes.
+Provides comprehensive AI-powered resume analysis using Gemini.
+Uses unified GeminiClient for consistent configuration.
 """
 
-import google.generativeai as genai
 import json
 from typing import Optional
-from app.core.config import settings
-
-# Configure Gemini
-genai.configure(api_key=settings.GEMINI_API_KEY)
+from app.services.gemini_client import gemini_client
 
 
-def clean_json_response(response_text: str) -> str:
-    """
-    Clean Gemini response to extract valid JSON.
-    Handles markdown code blocks and extra whitespace.
-    """
-    text = response_text.strip()
-    
-    if text.startswith("```json"):
-        text = text[7:]
-    elif text.startswith("```"):
-        text = text[3:]
-    
-    if text.endswith("```"):
-        text = text[:-3]
-    
-    text = text.strip()
-    
-    start_idx = text.find('{')
-    end_idx = text.rfind('}')
-    
-    if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-        text = text[start_idx:end_idx + 1]
-    
-    return text
+
 
 
 # Comprehensive Deep Scan prompt with industry-standard scoring
@@ -200,11 +173,6 @@ def analyze_with_gemini(pdf_content: bytes, job_description: Optional[str] = Non
     Returns:
         JSON string with full analysis results
     """
-    model = genai.GenerativeModel(
-        'gemini-2.0-flash-lite',
-        generation_config={"response_mime_type": "application/json"}
-    )
-
     # Build prompt with optional job description section
     if job_description:
         jd_section = JOB_DESCRIPTION_SECTION.format(job_description=job_description[:3000])
@@ -217,15 +185,8 @@ def analyze_with_gemini(pdf_content: bytes, job_description: Optional[str] = Non
     )
 
     try:
-        # Gemini 2.0 can take raw PDF bytes as input
-        response = model.generate_content([
-            {'mime_type': 'application/pdf', 'data': pdf_content},
-            prompt
-        ])
-        
-        # Clean and validate JSON response
-        cleaned_response = clean_json_response(response.text)
-        result = json.loads(cleaned_response)
+        # Use unified Gemini client for consistent model and config
+        result = gemini_client.generate_json_with_pdf(pdf_content, prompt)
         
         # Ensure required fields exist with defaults
         return json.dumps({

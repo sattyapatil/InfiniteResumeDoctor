@@ -25,7 +25,7 @@ from app.core.rate_limits import (
     get_tier_from_request,
     limiter
 )
-from app.api.v1.endpoints import analyze
+from app.api.v1.endpoints import analyze, extract
 
 # Configure structured logging
 logging.basicConfig(
@@ -134,6 +134,7 @@ async def log_requests(request: Request, call_next):
 
 # Include routers
 app.include_router(analyze.router, prefix=f"{settings.API_V1_STR}/analyze", tags=["analyze"])
+app.include_router(extract.router, prefix=f"{settings.API_V1_STR}/extract", tags=["extract"])
 
 
 @app.get("/")
@@ -146,7 +147,9 @@ async def root():
         "endpoints": {
             "health": "/health",
             "vitals": f"{settings.API_V1_STR}/analyze/vitals",
-            "deep_scan": f"{settings.API_V1_STR}/analyze/deep-scan"
+            "deep_scan": f"{settings.API_V1_STR}/analyze/deep-scan",
+            "extract_pdf": f"{settings.API_V1_STR}/extract/pdf",
+            "extract_text": f"{settings.API_V1_STR}/extract/text"
         }
     }
 

@@ -10,6 +10,10 @@ class Settings:
     
     # Core API Keys
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    
+    # Gemini Model Configuration (single source of truth)
+    GEMINI_MODEL_NAME: str = os.getenv("GEMINI_MODEL_NAME", "gemini-2.0-flash-lite")
+    
     API_SECRET_KEY: str = os.getenv("API_SECRET_KEY", "dev-secret-key-change-in-production")
     
     # Environment
