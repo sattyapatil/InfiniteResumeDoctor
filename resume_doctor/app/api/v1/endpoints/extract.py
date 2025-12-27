@@ -5,11 +5,12 @@ API endpoint for extracting structured resume data from PDFs or text.
 Includes file validation, size limits, and security checks.
 """
 
-from fastapi import APIRouter, File, UploadFile, Form, HTTPException
+from fastapi import APIRouter, File, UploadFile, Form, HTTPException, Header
 from fastapi.responses import JSONResponse
 from typing import Optional
 from app.services.resume_extractor import extract_resume
 from app.core.config import settings
+from app.core.auth import get_user_info
 
 router = APIRouter()
 
@@ -46,14 +47,36 @@ def validate_pdf_file(file_content: bytes) -> tuple[bool, str]:
 @router.post("/pdf")
 async def extract_from_pdf_endpoint(
     file: UploadFile = File(...),
+    x_api_key: Optional[str] = Header(None),
+    x_user_id: Optional[str] = Header(None),
+    x_user_tier: Optional[str] = Header(None),
 ):
     """
     Extract resume data from uploaded PDF file.
+    
+    Requires API key authentication.
     
     - **file**: PDF file (max 2MB)
     
     Returns structured resume data matching RESUME_DATA_FORMAT.md
     """
+    # Verify API key (required for import)
+    try:
+        user_data = get_user_info(x_api_key, x_user_id, x_user_tier)
+        tier = user_data.get("tier", "infinite-free")
+        user_id = user_data.get("userId", "guest")
+    except HTTPException as auth_error:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "success": False,
+                "error": {
+                    "code": "UNAUTHORIZED",
+                    "message": "Authentication required to import resumes."
+                }
+            }
+        )
+    
     try:
         # Read file content
         file_content = await file.read()
@@ -100,16 +123,38 @@ async def extract_from_pdf_endpoint(
 @router.post("/text")
 async def extract_from_text_endpoint(
     text: str = Form(...),
-    import_type: str = Form("text")  # "linkedin" or "text"
+    import_type: str = Form("text"),  # "linkedin" or "text"
+    x_api_key: Optional[str] = Header(None),
+    x_user_id: Optional[str] = Header(None),
+    x_user_tier: Optional[str] = Header(None),
 ):
     """
     Extract resume data from text content.
+    
+    Requires API key authentication.
     
     - **text**: Resume text or LinkedIn profile data (max ~5 pages)
     - **import_type**: "linkedin" for LinkedIn data, "text" for general text
     
     Returns structured resume data matching RESUME_DATA_FORMAT.md
     """
+    # Verify API key (required for import)
+    try:
+        user_data = get_user_info(x_api_key, x_user_id, x_user_tier)
+        tier = user_data.get("tier", "infinite-free")
+        user_id = user_data.get("userId", "guest")
+    except HTTPException as auth_error:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "success": False,
+                "error": {
+                    "code": "UNAUTHORIZED",
+                    "message": "Authentication required to import resumes."
+                }
+            }
+        )
+    
     # Validate text length
     MAX_TEXT_LENGTH = 25000  # ~5 pages
     MIN_TEXT_LENGTH = 50
