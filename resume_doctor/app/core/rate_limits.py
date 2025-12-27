@@ -14,23 +14,23 @@ from typing import Optional, Callable
 TIER_RATE_LIMITS = {
     # Guest users (no account) - IP-based limiting
     "guest": {
-        "vitals": "3/day",      # Basic bot protection
+        "vitals": "1/day",      # Basic bot protection
         "deep_scan": None,      # Not allowed
     },
     # Free tier users - User ID-based limiting
     "infinite-free": {
-        "vitals": "10/day",     # Fair usage
+        "vitals": "3/day",      # Fair usage
         "deep_scan": None,      # Not allowed
     },
     # Pro tier users (24-hour access)
     "infinite-pro": {
-        "vitals": "20/day",     # ~$0.015 AI cost
-        "deep_scan": "10/day",  # Premium feature
+        "vitals": "10/day",     # Premium feature
+        "deep_scan": "5/day",   # Premium feature
     },
     # Truly Infinite users (90-day access)
     "truly-infinite": {
-        "vitals": "100/day",    # Generous limit
-        "deep_scan": "50/day",  # ~$0.075 AI cost
+        "vitals": "15/day",     # Generous limit
+        "deep_scan": "10/day",  # Premium feature
     },
 }
 
@@ -87,13 +87,13 @@ limiter = create_dynamic_limiter()
 
 
 # Pre-configured rate limit strings for decorator use
-VITALS_GUEST_LIMIT = "3/day"
-VITALS_FREE_LIMIT = "10/day"
-VITALS_PRO_LIMIT = "20/day"
-VITALS_INFINITE_LIMIT = "100/day"
+VITALS_GUEST_LIMIT = "1/day"
+VITALS_FREE_LIMIT = "3/day"
+VITALS_PRO_LIMIT = "10/day"
+VITALS_INFINITE_LIMIT = "15/day"
 
-DEEP_SCAN_PRO_LIMIT = "10/day"
-DEEP_SCAN_INFINITE_LIMIT = "50/day"
+DEEP_SCAN_PRO_LIMIT = "5/day"
+DEEP_SCAN_INFINITE_LIMIT = "10/day"
 
 
 def rate_limit_exceeded_handler(request: Request, exc: Exception):
@@ -125,11 +125,11 @@ def rate_limit_exceeded_handler(request: Request, exc: Exception):
     
     # Different messages based on tier
     if tier == "guest":
-        message = "You've used your 3 free resume scans for today."
-        action = "Create a free account to get 10 scans per day, or upgrade to Pro for unlimited access."
+        message = "You've used your 1 free resume scan for today."
+        action = "Create a free account to get 3 scans per day, or upgrade to Pro for 10 daily scans."
     elif tier == "infinite-free":
         message = f"You've used all {daily_limit} of your daily resume scans."
-        action = "Upgrade to Pro for more scans and access to Deep Scan AI analysis."
+        action = "Upgrade to Pro for 10 scans per day and access to Deep Scan AI analysis."
     elif tier == "infinite-pro":
         message = f"You've reached your Pro limit of {daily_limit} {endpoint.replace('_', ' ')} scans today."
         action = "Upgrade to Truly Infinite for higher limits, or try again tomorrow."
